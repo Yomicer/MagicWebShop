@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.magic</groupId>
+    <artifactId>MagicWebShop</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>MagicWebShop</name>
+    <description>Cross-server marketplace with a web UI for Minecraft (Paper/Spigot)</description>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- 每次自动构建注入的版本后缀（如 -Build-42）。本地构建为空，版本即为 1.0.0。
+             由 CI 用 -Dbuild.suffix=... 覆盖，使每个 Release 都带唯一构建标识。 -->
+        <build.suffix></build.suffix>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Paper API (includes Bukkit + bundled Gson) -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.11-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Vault economy API -->
+        <dependency>
+            <groupId>com.github.MilkBowl</groupId>
+            <artifactId>VaultAPI</artifactId>
+            <version>1.7</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Gson: shipped by the server at runtime, needed here to compile. -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Netty HTTP codec: BUNDLED into the plugin jar (some servers don't ship
+             netty-codec-http). Its base netty modules (codec/handler/buffer/...) are
+             NOT bundled - those must come from the server so the shared-port pipeline
+             injection uses the same classes. -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-http</artifactId>
+            <version>4.1.115.Final</version>
+            <scope>compile</scope>
+            <exclusions>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-common</artifactId></exclusion>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId></exclusion>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-transport</artifactId></exclusion>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-codec</artifactId></exclusion>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-handler</artifactId></exclusion>
+                <exclusion><groupId>io.netty</groupId><artifactId>netty-resolver</artifactId></exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Base Netty (provided by the server at runtime; only needed to compile). -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.115.Final</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.name}-${project.version}</finalName>
+        <!-- 只对 plugin.yml / config.yml 做变量过滤（注入构建标识），
+             其余资源（web 前端、贴图等二进制文件）保持原样，避免被过滤破坏。 -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>plugin.yml</include>
+                    <include>config.yml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>plugin.yml</exclude>
+                    <exclude>config.yml</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+            </plugin>
+            <!-- Bundle ONLY netty-codec-http into the final jar (no relocation, so it
+                 interoperates with the server's own Netty). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>io.netty:netty-codec-http</include>
+                                </includes>
+                            </artifactSet>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

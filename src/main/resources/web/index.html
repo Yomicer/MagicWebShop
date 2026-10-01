@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MagicWebShop · 魔法集市</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=ZCOOL+KuaiLe&family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css?v=11">
+    <link rel="icon" href="/api/icon?material=EMERALD">
+</head>
+<body>
+<div class="bg-fx"></div>
+<div class="bg-grid"></div>
+<div class="bg-scan"></div>
+<header class="topbar">
+    <div class="topbar-inner">
+        <div class="brand">
+            <span class="brand-logo">⬡</span>
+            <div class="brand-text">
+                <span class="brand-name">Magic<em>WebShop</em></span>
+                <span class="brand-sub" id="serverName">魔法集市</span>
+            </div>
+        </div>
+        <div class="searchbox">
+            <input id="search" type="text" placeholder="检索物品 · 例如 钻石剑 / diamond">
+            <button id="searchBtn">检索</button>
+        </div>
+        <div class="account" id="account">
+            <button id="themeBtn" class="btn-theme" title="切换主题">✨</button>
+            <button id="favBtn" class="btn-account ghost hidden" title="我收藏的卖家">⭐ 收藏</button>
+            <button id="loginBtn" class="btn-account">接入</button>
+            <button id="mineBtn" class="btn-account ghost hidden">我的舱位</button>
+        </div>
+    </div>
+    <nav class="tabs">
+        <button class="tab active" data-filter="all">全部</button>
+        <button class="tab" data-filter="MONEY">◆ 一口价</button>
+        <button class="tab" data-filter="BARTER">⇄ 以物换物</button>
+        <span class="spacer"></span>
+        <span class="count" id="count"></span>
+    </nav>
+</header>
+
+<main class="wrap">
+    <!-- 主集市视图 -->
+    <div id="marketView">
+        <div id="viewBar" class="view-bar">
+            <button id="modeToggle" class="btn-view">切换：加载更多</button>
+            <div id="pager" class="pager hidden">
+                <button id="prevPage" class="btn-view">← 上一页</button>
+                <span id="pageInfo" class="page-info"></span>
+                <button id="nextPage" class="btn-view">下一页 →</button>
+            </div>
+        </div>
+        <div id="empty" class="empty hidden">
+            <div class="empty-emoji">📦</div>
+            <p>暂时没有商品，快去游戏里用 <code>/webshop sell</code> 上架吧！</p>
+        </div>
+        <section id="grid" class="grid"></section>
+        <div id="loadMoreWrap" class="load-more hidden">
+            <button id="loadMore" class="btn-load-more">加载更多</button>
+        </div>
+    </div>
+
+    <!-- 玩家店铺视图（点击商品卡上的卖家名进入） -->
+    <div id="shopView" class="hidden">
+        <div class="shop-back-row">
+            <a id="shopBack" href="#">← 返回集市</a>
+        </div>
+        <div class="shop-header">
+            <img id="shopAvatar" class="shop-avatar" src="/api/icon?material=PLAYER_HEAD" alt="头像">
+            <div class="shop-id">
+                <div class="shop-name" id="shopName">…</div>
+                <div class="shop-meta" id="shopMeta"></div>
+            </div>
+            <button id="shopFav" class="btn-fav">☆ 收藏卖家</button>
+        </div>
+        <div class="shop-stats" id="shopStats">
+            <div class="stat"><div class="v" id="stOnSale">0</div><div class="k">在售</div></div>
+            <div class="stat"><div class="v" id="stListed">0</div><div class="k">累计上架</div></div>
+            <div class="stat"><div class="v" id="stSold">0</div><div class="k">成交次数</div></div>
+            <div class="stat"><div class="v" id="stSoldItems">0</div><div class="k">卖出物品</div></div>
+            <div class="stat"><div class="v" id="stEarned">0</div><div class="k">累计收益</div></div>
+            <div class="stat"><div class="v" id="stBarter">0</div><div class="k">换物达成</div></div>
+        </div>
+        <h2 class="shop-sec">在售商品</h2>
+        <section id="shopGrid" class="grid"></section>
+        <div id="shopEmpty" class="empty hidden">
+            <div class="empty-emoji">🛒</div>
+            <p>该玩家当前没有在售商品。</p>
+        </div>
+    </div>
+</main>
+
+<!-- 登录弹窗 -->
+<div class="modal-mask hidden" id="loginModal">
+    <div class="modal">
+        <h3>玩家登录</h3>
+        <p class="hint">一次性登录码：游戏里输入 <code>/webshop web</code>；固定密码：游戏里输入 <code>/webshop setpass &lt;密码&gt;</code> 设置。</p>
+        <div class="login-mode">
+            <button id="lmCode" class="lm-tab active">登录码</button>
+            <button id="lmPass" class="lm-tab">固定密码</button>
+        </div>
+        <label>游戏昵称</label>
+        <input id="loginName" type="text" placeholder="你的 Minecraft 名字">
+        <div id="codeField">
+            <label>登录码</label>
+            <input id="loginCode" type="text" inputmode="numeric" maxlength="6" placeholder="6 位数字">
+        </div>
+        <div id="passField" class="hidden">
+            <label>固定密码</label>
+            <input id="loginPass" type="password" maxlength="64" placeholder="你在游戏里设置的密码">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-primary" id="loginSubmit">登录</button>
+            <button class="btn-ghost" data-close>取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 购买弹窗 -->
+<div class="modal-mask hidden" id="buyModal">
+    <div class="modal">
+        <h3 id="buyTitle">确认交易</h3>
+        <div class="buy-body" id="buyBody"></div>
+        <div class="modal-actions">
+            <button class="btn-primary" id="buyConfirm">确认</button>
+            <button class="btn-ghost" data-close>取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 我的上架弹窗 -->
+<div class="modal-mask hidden" id="mineModal">
+    <div class="modal wide">
+        <h3>我的上架</h3>
+        <div id="mineList" class="mine-list"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" data-close>关闭</button>
+        </div>
+    </div>
+</div>
+
+<!-- 收藏的卖家弹窗 -->
+<div class="modal-mask hidden" id="favModal">
+    <div class="modal wide">
+        <h3>⭐ 我收藏的卖家</h3>
+        <div id="favList" class="mine-list"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" data-close>关闭</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/js/app.js?v=10"></script>
+</body>
+</html>
