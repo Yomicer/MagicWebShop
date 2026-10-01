@@ -26,10 +26,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 JDK 17
+      - name: 安装 JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'      # ← 与 pom.xml 的 maven.compiler.release 保持一致
+          java-version: '21'      # ← 与 pom.xml 的 maven.compiler.release 保持一致（Paper 1.21 需要 Java 21）
           distribution: 'temurin'
           cache: maven
 

@@ -13,7 +13,10 @@
     <description>Cross-server marketplace with a web UI for Minecraft (Paper/Spigot)</description>
 
     <properties>
-        <maven.compiler.release>17</maven.compiler.release>
+        <!-- Paper 1.21+ 要求 Java 21 运行，且官方 paper-api 快照现按 Java 21 编译
+             （类文件版本 65.0）。编译目标必须 >= 21，否则 JDK 17 的 javac 无法读取
+             该类文件（class file has wrong version 65.0）。CI 请用 setup-java 21。 -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- 每次自动构建注入的版本后缀（如 -Build-42）。本地构建为空，版本即为 1.0.0。
              由 CI 用 -Dbuild.suffix=... 覆盖，使每个 Release 都带唯一构建标识。 -->
