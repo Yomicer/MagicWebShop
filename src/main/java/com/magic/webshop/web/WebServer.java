@@ -11,7 +11,6 @@ import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
@@ -27,6 +26,9 @@ public class WebServer {
 
     private HttpServer server;
     private int boundPort;
+
+    /** Reject request bodies larger than this (protects the 8 worker threads from memory DoS). */
+    private static final int MAX_BODY_BYTES = 1024 * 1024;
 
     public WebServer(PluginConfig config, RequestRouter router, Logger logger) {
         this.config = config;
@@ -50,7 +52,12 @@ public class WebServer {
             server = HttpServer.create(new InetSocketAddress(config.getBind(), 0), 0);
         }
         boundPort = server.getAddress().getPort();
-        server.setExecutor(Executors.newFixedThreadPool(8));
+        // Bounded worker pool: at most 8 threads and a 256-request queue; excess is dropped
+        // (client times out) instead of piling up memory under load.
+        server.setExecutor(new java.util.concurrent.ThreadPoolExecutor(
+                8, 8, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(256),
+                new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()));
         server.createContext("/", this::handle);
         server.start();
         logger.info("Web server listening on " + config.getBind() + ":" + boundPort);
@@ -71,14 +78,24 @@ public class WebServer {
                 if (!e.getValue().isEmpty()) headers.put(e.getKey().toLowerCase(), e.getValue().get(0));
             }
             byte[] body;
-            try (InputStream in = ex.getRequestBody()) { body = in.readAllBytes(); }
+            try (InputStream in = ex.getRequestBody()) {
+                body = in.readNBytes(MAX_BODY_BYTES + 1);
+                if (body.length > MAX_BODY_BYTES) {
+                    ex.sendResponseHeaders(413, -1);
+                    return;
+                }
+            }
+            String ip = ex.getRemoteAddress() == null ? null : ex.getRemoteAddress().getAddress().getHostAddress();
             Map<String, String> query = RequestRouter.parseQuery(ex.getRequestURI().getRawQuery());
 
             RequestRouter.Response r = router.handle(ex.getRequestMethod(),
-                    ex.getRequestURI().getPath(), query, headers, body);
+                    ex.getRequestURI().getPath(), query, headers, body, ip);
 
             ex.getResponseHeaders().set("Content-Type", r.contentType);
             ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            ex.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+            ex.getResponseHeaders().set("X-Frame-Options", "DENY");
+            ex.getResponseHeaders().set("Referrer-Policy", "no-referrer");
             r.headers.forEach((k, v) -> ex.getResponseHeaders().set(k, v));
             ex.sendResponseHeaders(r.status, r.body.length);
             try (OutputStream os = ex.getResponseBody()) { os.write(r.body); }

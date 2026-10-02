@@ -20,7 +20,9 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -51,12 +53,30 @@ public class TextureService {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(6)).build();
 
-    private final ConcurrentHashMap<String, byte[]> memory = new ConcurrentHashMap<>();
+    /** Bounded in-memory cache: evicts least-recently-used entries past the cap
+     *  so attacker-driven unique keys cannot grow memory without limit. */
+    private static final class LruCache {
+        private final LinkedHashMap<String, byte[]> map;
+        LruCache(int max) {
+            this.map = new LinkedHashMap<>(128, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
+                    return size() > max;
+                }
+            };
+        }
+        synchronized byte[] get(String k) { return map.get(k); }
+        synchronized void put(String k, byte[] v) { map.put(k, v); }
+        synchronized void clear() { map.clear(); }
+    }
+
+    private final LruCache memory = new LruCache(2048);
     /** Cached player avatars (keyed by uuid) to avoid re-fetching Mojang profiles. */
-    private final ConcurrentHashMap<String, byte[]> avatarMemory = new ConcurrentHashMap<>();
+    private final LruCache avatarMemory = new LruCache(512);
     /** uuids for which we already logged the "fell back to generated avatar" warning. */
     private final Set<String> avatarWarned = ConcurrentHashMap.newKeySet();
+    /** "no texture" markers, capped so junk material names can't grow it forever. */
     private final Set<String> misses = ConcurrentHashMap.newKeySet();
+    private static final int MISSES_CAP = 1024;
     /** Bumped on every reload so the web UI's icon URLs change and browsers refetch. */
     private final java.util.concurrent.atomic.AtomicInteger generation =
             new java.util.concurrent.atomic.AtomicInteger(
@@ -164,7 +184,7 @@ public class TextureService {
             write(cached, png);
             return new Icon(png, "image/png");
         }
-        misses.add(key);
+        if (misses.size() < MISSES_CAP) misses.add(key);
         return new Icon(IconRenderer.renderSvg(material), "image/svg+xml");
     }
 

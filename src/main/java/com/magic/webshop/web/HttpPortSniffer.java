@@ -48,7 +48,7 @@ public class HttpPortSniffer extends ByteToMessageDecoder {
             }
             // install HTTP handlers right after this sniffer (reverse order)
             p.addAfter(self, "mws-http-handler", new NettyHttpHandler(router, worker, logger));
-            p.addAfter(self, "mws-http-agg", new HttpObjectAggregator(4 * 1024 * 1024));
+            p.addAfter(self, "mws-http-agg", new HttpObjectAggregator(1024 * 1024)); // 1MB body cap
             p.addAfter(self, "mws-http-codec", new HttpServerCodec());
             // removing self makes ByteToMessageDecoder forward buffered bytes to the codec
             p.remove(self);

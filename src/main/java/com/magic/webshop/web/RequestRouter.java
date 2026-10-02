@@ -50,7 +50,15 @@ public class RequestRouter {
     private final PasswordStorage passwords;
     private final TextureService textures;
     private final FavoritesStorage favorites;
+    private final IpRateLimiter rateLimiter = new IpRateLimiter();
     private final Logger logger;
+
+    /** Strict UUID shape for player identity inputs (anti path-traversal / junk keys). */
+    private static final java.util.regex.Pattern UUID_PATTERN = java.util.regex.Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    /** Material names are plain snake_case identifiers only. */
+    private static final java.util.regex.Pattern MATERIAL_PATTERN = java.util.regex.Pattern.compile("^[a-zA-Z0-9_]+$");
+    private static final java.util.regex.Pattern MODEL_PATTERN = java.util.regex.Pattern.compile("^[a-zA-Z0-9_\\-:./]+$");
 
     public RequestRouter(PluginConfig config, Gson gson, ListingStorage listings, MarketService market,
                          SessionManager sessions, PasswordStorage passwords, TextureService textures,
@@ -68,9 +76,10 @@ public class RequestRouter {
 
     /**
      * @param headers keys MUST be lower-cased by the caller for case-insensitive lookup.
+     * @param remoteIp the client IP (used for brute-force throttling).
      */
     public Response handle(String method, String path, Map<String, String> query,
-                           Map<String, String> headers, byte[] body) {
+                           Map<String, String> headers, byte[] body, String remoteIp) {
         try {
             switch (path) {
                 case "/api/config": return apiConfig();
@@ -81,7 +90,7 @@ public class RequestRouter {
                 case "/api/head": return apiHead(query);
                 case "/api/avatar": return apiAvatar(query);
                 case "/api/missing-textures": return apiMissingTextures();
-                case "/api/login": return apiLogin(body);
+                case "/api/login": return apiLogin(body, remoteIp);
                 case "/api/mine": return apiMine(headers);
                 case "/api/stats": return apiStats(headers);
                 case "/api/favorites": return apiFavorites(headers);
@@ -141,17 +150,20 @@ public class RequestRouter {
     }
 
     private Response apiLocalListings(Map<String, String> headers) {
-        if (!peerAuth(headers)) return json(401, fail("unauthorised"));
+        if (!peerAuth(headers)) return peerDenied("/api/listings/local");
         return json(200, listings.getAll());
     }
 
     private Response apiIcon(Map<String, String> q) {
         String material = q.getOrDefault("material", "STONE");
+        if (!MATERIAL_PATTERN.matcher(material).matches()) return json(400, fail("非法物品名。"));
         Integer cmd = null;
         if (q.containsKey("cmd")) {
             try { cmd = Integer.parseInt(q.get("cmd")); } catch (NumberFormatException ignored) { }
         }
-        TextureService.Icon icon = textures.get(material, cmd, q.get("model"));
+        String model = q.get("model");
+        if (model != null && !MODEL_PATTERN.matcher(model).matches()) model = null;
+        TextureService.Icon icon = textures.get(material, cmd, model);
         Response r = new Response(200, icon.contentType(), icon.bytes());
         r.headers.put("Cache-Control", "public, max-age=86400");
         return r;
@@ -166,7 +178,10 @@ public class RequestRouter {
         return r;
     }
 
-    private Response apiLogin(byte[] body) {
+    private Response apiLogin(byte[] body, String ip) {
+        if (rateLimiter.isBlocked(ip)) {
+            return json(200, fail("尝试次数过多，请 1 分钟后再试。"));
+        }
         JsonObject b = parse(body);
         String name = b != null && b.has("name") ? b.get("name").getAsString() : null;
         String code = b != null && b.has("code") ? b.get("code").getAsString() : null;
@@ -174,7 +189,11 @@ public class RequestRouter {
         String uuid;
         if (code != null && !code.isEmpty()) {
             String token = sessions.redeem(name, code);
-            if (token == null) return json(200, fail("昵称或登录码无效（登录码 5 分钟后过期）。"));
+            if (token == null) {
+                rateLimiter.fail(ip);
+                return json(200, fail("昵称或登录码无效（登录码 5 分钟后过期，最多试 3 次）。"));
+            }
+            rateLimiter.reset(ip);
             JsonObject o = new JsonObject();
             o.addProperty("ok", true);
             o.addProperty("token", token);
@@ -184,10 +203,14 @@ public class RequestRouter {
         if (password != null && !password.isEmpty()) {
             String res = passwords.verify(name, password);
             if ("__rate_limited__".equals(res)) return json(200, fail("尝试次数过多，请 1 分钟后再试。"));
-            if (res == null) return json(200, fail("昵称或固定密码错误。未设置密码？请在游戏里用 /webshop setpass <密码> 设置。"));
+            if (res == null) {
+                rateLimiter.fail(ip);
+                return json(200, fail("昵称或固定密码错误。未设置密码？请在游戏里用 /webshop setpass <密码> 设置。"));
+            }
             uuid = res;
+            rateLimiter.reset(ip);
         } else {
-            return json(200, fail("请填写 6 位登录码，或使用固定密码登录。"));
+            return json(200, fail("请填写登录码，或使用固定密码登录。"));
         }
         JsonObject o = new JsonObject();
         o.addProperty("ok", true);
@@ -242,7 +265,9 @@ public class RequestRouter {
     /** Player avatar (face composited from their skin); falls back to a head tile. */
     private Response apiAvatar(Map<String, String> q) {
         String uuid = q.get("u");
-        TextureService.Icon icon = uuid == null ? null : textures.getAvatar(uuid);
+        // uuid becomes part of a filesystem path; only accept well-formed UUIDs.
+        if (uuid == null || !UUID_PATTERN.matcher(uuid).matches()) return json(400, fail("非法玩家标识。"));
+        TextureService.Icon icon = textures.getAvatar(uuid);
         if (icon == null) icon = textures.get("PLAYER_HEAD", null, null);
         Response r = new Response(200, icon.contentType(), icon.bytes());
         r.headers.put("Cache-Control", "public, max-age=86400");
@@ -256,7 +281,7 @@ public class RequestRouter {
 
     /** Local player statistics; consumed by peer servers to build shop pages. */
     private Response apiStats(Map<String, String> headers) {
-        if (!peerAuth(headers)) return json(401, fail("unauthorised"));
+        if (!peerAuth(headers)) return peerDenied("/api/stats");
         return json(200, market.localStats());
     }
 
@@ -321,12 +346,12 @@ public class RequestRouter {
     }
 
     private Response apiCompleteSale(Map<String, String> headers, byte[] body) {
-        if (!peerAuth(headers)) return json(401, fail("unauthorised"));
+        if (!peerAuth(headers)) return peerDenied("/api/complete-sale");
         return json(200, market.completeSale(parse(body)));
     }
 
     private Response apiAnnounce(Map<String, String> headers, byte[] body) {
-        if (!peerAuth(headers)) return json(401, fail("unauthorised"));
+        if (!peerAuth(headers)) return peerDenied("/api/announce");
         JsonObject payload = parse(body);
         if (payload != null) market.receiveAnnounce(payload);
         JsonObject ok = new JsonObject();
@@ -354,9 +379,24 @@ public class RequestRouter {
         return o;
     }
 
+    /**
+     * Peer authentication: the caller must present the same network-secret AND
+     * declare a server name (X-Server-Name) that is configured in OUR peers.
+     * This enforces mutual configuration - one-way trading is not allowed.
+     */
     private boolean peerAuth(Map<String, String> headers) {
         String secret = headers.get("x-network-secret");
-        return secret != null && secret.equals(config.getNetworkSecret());
+        if (secret == null || !secret.equals(config.getNetworkSecret())) return false;
+        String from = headers.get("x-server-name");
+        if (from == null || from.isBlank()) return false;
+        if (from.equalsIgnoreCase(config.getServerName())) return false; // a server may not talk to itself
+        return config.hasPeer(from);
+    }
+
+    private Response peerDenied(String path) {
+        logger.warning("Rejected peer call " + path
+                + ": 双方未互相配置（请确认双方 network-secret 一致，且互相在 peers 里配置了对方）。");
+        return json(403, fail("跨服未互相配置：请双方都在 peers 里配置对方，且 network-secret 一致。"));
     }
 
     private SessionManager.Session session(Map<String, String> headers) {

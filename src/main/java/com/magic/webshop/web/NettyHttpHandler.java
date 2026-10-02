@@ -49,10 +49,13 @@ public class NettyHttpHandler extends SimpleChannelInboundHandler<FullHttpReques
         req.content().readBytes(body);
         final byte[] bodyFinal = body;
 
+        final String ip = ctx.channel().remoteAddress() instanceof java.net.InetSocketAddress sa
+                ? sa.getAddress().getHostAddress() : null;
+
         worker.submit(() -> {
             RequestRouter.Response r;
             try {
-                r = router.handle(method, path, query, headers, bodyFinal);
+                r = router.handle(method, path, query, headers, bodyFinal, ip);
             } catch (Exception e) {
                 logger.warning("Netty HTTP route error: " + e.getMessage());
                 r = new RequestRouter.Response(500, "text/plain", "error".getBytes(StandardCharsets.UTF_8));
@@ -70,6 +73,9 @@ public class NettyHttpHandler extends SimpleChannelInboundHandler<FullHttpReques
         resp.headers().set(HttpHeaderNames.CONTENT_LENGTH, r.body.length);
         resp.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         resp.headers().set(HttpHeaderNames.CONNECTION, "close");
+        resp.headers().set("X-Content-Type-Options", "nosniff");
+        resp.headers().set("X-Frame-Options", "DENY");
+        resp.headers().set("Referrer-Policy", "no-referrer");
         r.headers.forEach((k, v) -> resp.headers().set(k, v));
         ctx.writeAndFlush(resp).addListener(ChannelFutureListener.CLOSE);
     }

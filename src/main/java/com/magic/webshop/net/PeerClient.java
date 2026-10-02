@@ -77,6 +77,7 @@ public class PeerClient {
                     HttpRequest req = HttpRequest.newBuilder()
                             .uri(URI.create("http://" + address + "/api/listings/local"))
                             .header("X-Network-Secret", config.getNetworkSecret())
+                            .header("X-Server-Name", config.getServerName())
                             .timeout(Duration.ofSeconds(6))
                             .GET().build();
                     HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
@@ -90,6 +91,10 @@ public class PeerClient {
                         workingAddress.put(peer.name, address);
                         ok = true;
                         break;
+                    }
+                    if (resp.statusCode() == 403) {
+                        logger.warning("Peer " + peer.name + " rejected our catalog pull (403): "
+                                + "请在双方 peers 里都配置对方，且 network-secret 一致（不支持单向交易）。");
                     }
                 } catch (Exception e) {
                     logger.fine("Peer " + peer.name + " link " + address + " down: " + e.getMessage());
@@ -109,6 +114,7 @@ public class PeerClient {
                     HttpRequest req = HttpRequest.newBuilder()
                             .uri(URI.create("http://" + address + "/api/stats"))
                             .header("X-Network-Secret", config.getNetworkSecret())
+                            .header("X-Server-Name", config.getServerName())
                             .timeout(Duration.ofSeconds(6))
                             .GET().build();
                     HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
@@ -122,6 +128,10 @@ public class PeerClient {
                         workingAddress.put(peer.name, address);
                         ok = true;
                         break;
+                    }
+                    if (resp.statusCode() == 403) {
+                        logger.warning("Peer " + peer.name + " rejected our stats pull (403): "
+                                + "请在双方 peers 里都配置对方，且 network-secret 一致（不支持单向交易）。");
                     }
                 } catch (Exception e) {
                     logger.fine("Peer " + peer.name + " stats link " + address + " down: " + e.getMessage());
@@ -159,14 +169,25 @@ public class PeerClient {
                 HttpRequest req = HttpRequest.newBuilder()
                         .uri(URI.create("http://" + address + "/api/complete-sale"))
                         .header("X-Network-Secret", config.getNetworkSecret())
+                        .header("X-Server-Name", config.getServerName())
                         .header("Content-Type", "application/json")
                         .timeout(Duration.ofSeconds(8))
                         .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(request)))
                         .build();
                 HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+                String body = resp.body();
                 if (resp.statusCode() == 200) {
                     workingAddress.put(sellerServer, address);
-                    return gson.fromJson(resp.body(), JsonObject.class);
+                    return gson.fromJson(body, JsonObject.class);
+                }
+                if (resp.statusCode() == 403) {
+                    try {
+                        JsonObject o = gson.fromJson(body, JsonObject.class);
+                        if (o != null && o.has("error")) {
+                            return error("跨服被拒: " + o.get("error").getAsString());
+                        }
+                    } catch (Exception ignored) { }
+                    return error("对端拒绝了本次跨服成交（HTTP 403）：请双方都在 peers 里配置对方，且 network-secret 一致。");
                 }
                 lastErr = "HTTP " + resp.statusCode();
             } catch (Exception e) {
@@ -192,6 +213,7 @@ public class PeerClient {
                     HttpRequest req = HttpRequest.newBuilder()
                             .uri(URI.create("http://" + address + "/api/announce"))
                             .header("X-Network-Secret", config.getNetworkSecret())
+                            .header("X-Server-Name", config.getServerName())
                             .header("Content-Type", "application/json")
                             .timeout(Duration.ofSeconds(5))
                             .POST(HttpRequest.BodyPublishers.ofString(body))

@@ -142,7 +142,7 @@ public class WebShopCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(clickableLink("点击自动登录并打开商城: ", loginUrl));
         player.sendMessage(P + ChatColor.GRAY + "（若需手动登录）网址: " + ChatColor.WHITE + base
                 + ChatColor.GRAY + " 登录码: " + ChatColor.GOLD + code);
-        player.sendMessage(P + ChatColor.GRAY + "登录码 5 分钟内有效，仅可使用一次。");
+        player.sendMessage(P + ChatColor.GRAY + "登录码 5 分钟内有效，仅可使用一次（输错 3 次作废）。");
     }
 
     private void doSetPass(Player player, String[] args) {

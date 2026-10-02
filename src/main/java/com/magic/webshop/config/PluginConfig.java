@@ -34,6 +34,7 @@ public class PluginConfig {
     private String deliveryDefaultMode;
     private boolean autoUpdate;
     private String updateRepo;
+    private String updateMirror;
     private String networkSecret;
     private final List<Peer> peers = new ArrayList<>();
     private int peerRefreshSeconds;
@@ -75,6 +76,7 @@ public class PluginConfig {
                 ? "backpack" : "mailbox";
         autoUpdate = c.getBoolean("auto-update", false);
         updateRepo = c.getString("update-repo", "https://github.com/Yomicer/MagicWebShop");
+        updateMirror = c.getString("update-mirror", "");
         networkSecret = c.getString("network-secret", "change-me");
         peerRefreshSeconds = Math.max(5, c.getInt("peer-refresh-seconds", 15));
 
@@ -177,8 +179,17 @@ public class PluginConfig {
     public String getDeliveryDefaultMode() { return deliveryDefaultMode; }
     public boolean isAutoUpdate() { return autoUpdate; }
     public String getUpdateRepo() { return updateRepo; }
+    public String getUpdateMirror() { return updateMirror; }
     public String getNetworkSecret() { return networkSecret; }
     public List<Peer> getPeers() { return peers; }
+
+    /** True if this server has a peer configured with the given server name.
+     *  Cross-server trading is only allowed between mutually-configured servers. */
+    public boolean hasPeer(String name) {
+        if (name == null || name.isBlank()) return false;
+        for (Peer p : peers) if (name.equals(p.name)) return true;
+        return false;
+    }
     public int getPeerRefreshSeconds() { return peerRefreshSeconds; }
     public boolean isEconomyEnabled() { return economyEnabled; }
     public String getCurrencySymbol() { return currencySymbol; }

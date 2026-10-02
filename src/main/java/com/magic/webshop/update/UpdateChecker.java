@@ -59,6 +59,16 @@ public class UpdateChecker {
         }
     }
 
+    /** Prefix a URL with the configured mirror (empty = 直连 GitHub).
+     *  Mirror proxies typically take the full original URL, e.g.
+     *  https://ghproxy.net/https://api.github.com/...
+     */
+    private String resolve(String url) {
+        String m = config.getUpdateMirror();
+        if (m == null || m.isBlank()) return url;
+        return m.endsWith("/") ? m + url : m + "/" + url;
+    }
+
     /** Query the GitHub API for the latest stable release. Null if unavailable. */
     public Latest latest() {
         try {
@@ -66,7 +76,8 @@ public class UpdateChecker {
                     .replaceFirst("^https?://github\\.com/", "")
                     .replaceAll("/$", "");
             if (!repo.matches("[^/]+/[^/]+")) return null;
-            URI uri = URI.create("https://api.github.com/repos/" + repo + "/releases/latest");
+            String apiUrl = resolve("https://api.github.com/repos/" + repo + "/releases/latest");
+            URI uri = URI.create(apiUrl);
             HttpURLConnection c = (HttpURLConnection) uri.toURL().openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(8000);
@@ -92,7 +103,11 @@ public class UpdateChecker {
                 return new Latest(tag, name, assetUrl);
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("MagicWebShop: update check failed: " + e.getMessage());
+            String m = e.getMessage();
+            String hint = (m != null && (m.contains("PKIX") || m.contains("cert") || m.contains("SSL")))
+                    ? "TLS 证书校验失败：服务器网络可能拦截了 GitHub 的 HTTPS（可尝试在 config.yml 配置 update-mirror 镜像）。"
+                    : "无法连接 GitHub，可尝试配置 update-mirror 镜像。";
+            plugin.getLogger().warning("MagicWebShop: update check failed: " + m + " (" + hint + ")");
             return null;
         }
     }
@@ -105,7 +120,7 @@ public class UpdateChecker {
                     .getCodeSource().getLocation().toURI());
             File dir = runningJar.getParentFile();
             if (dir == null) dir = plugin.getDataFolder().getParentFile();
-            URI uri = URI.create(assetUrl);
+            URI uri = URI.create(resolve(assetUrl));
             HttpURLConnection c = (HttpURLConnection) uri.toURL().openConnection();
             c.setConnectTimeout(15000);
             c.setReadTimeout(15000);

@@ -12,7 +12,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
@@ -30,7 +29,11 @@ public class NettyPortSharer {
     private final JavaPlugin plugin;
     private final RequestRouter router;
     private final Logger logger;
-    private final ExecutorService worker = Executors.newFixedThreadPool(8);
+    // Bounded worker pool: 8 threads, 256-request queue; excess is dropped under load.
+    private final ExecutorService worker = new java.util.concurrent.ThreadPoolExecutor(
+            8, 8, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+            new java.util.concurrent.ArrayBlockingQueue<>(256),
+            new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
 
     private final List<Channel> injectedChannels = new ArrayList<>();
     private Injector injector;
